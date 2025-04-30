@@ -1,10 +1,6 @@
-version: '3.3'
-
-volumes:
-  mysql_data:
+version: "3.8"
 
 services:
-
   visualizer:
     image: dockersamples/visualizer:stable
     ports:
@@ -14,30 +10,180 @@ services:
     deploy:
       placement:
         constraints: [node.role == manager]
-
-  loadbalancer:
-    image: nginx
-    ports:
-      - '80:80'
-    volumes:
-      - /loadbalancer:/etc/nginx/conf.d
+  web:
+    image: registry.digitalocean.com/sad-containers/minitwit:main
     deploy:
       replicas: 2
-
-  minitwitimage:
-    image: devopsitu/minitwitimage
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role!=manager"
+    env_file:
+      - .env
     ports:
-      - '8080:5000'
-    deploy:
-      replicas: 10
+      - "4567:4567"
+    networks:
+      - minitwit_network
 
-  itusqlimage:
-    image: devopsitu/itusqlimage
-    ports:
-      - '3306:3306'
-    environment:
-      - MYSQL_ROOT_PASSWORD=megetsikkertkodeord
-    volumes:
-      - mysql_data:/var/lib/mysql
+  db:
+    image: postgres:15
     deploy:
       replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    env_file:
+      - .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - minitwit_network
+
+  prometheus:
+    image: registry.digitalocean.com/sad-containers/prometheus:main
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    volumes:
+      - prometheus-data:/prometheus
+    networks:
+      - minitwit_network
+
+  grafana:
+    image: registry.digitalocean.com/sad-containers/grafana:main
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    env_file:
+      - .env
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - minitwit_network
+
+  elasticsearch-setup:
+    image: registry.digitalocean.com/sad-containers/elasticsearch-setup:main
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - "node.role==manager"
+      restart_policy:
+        condition: none
+    env_file:
+      - .env
+    volumes:
+      - elasticsearch-init:/data
+    networks:
+      - minitwit_network
+
+  elasticsearch:
+    image: registry.digitalocean.com/sad-containers/elasticsearch:main
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    environment:
+      node.name: elasticsearch
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    env_file:
+      - .env
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data:Z
+    networks:
+      - minitwit_network
+
+  logstash:
+    image: registry.digitalocean.com/sad-containers/logstash:main
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+    env_file:
+      - .env
+    networks:
+      - minitwit_network
+
+  kibana:
+    image: registry.digitalocean.com/sad-containers/kibana:main
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    ports:
+      - "5601:5601"
+    env_file:
+      - .env
+    networks:
+      - minitwit_network
+
+  filebeat:
+    image: registry.digitalocean.com/sad-containers/filebeat:latest
+    deploy:
+      replicas: 1
+      update_config:
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - "node.role==manager"
+    user: root
+    command:
+      - -e
+      - --strict.perms=false
+    env_file:
+      - .env
+    volumes:
+      - type: bind
+        source: /var/lib/docker/containers
+        target: /var/lib/docker/containers
+        read_only: true
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    networks:
+      - minitwit_network
+
+volumes:
+  pg_data:
+  prometheus-data:
+  grafana-data:
+  elasticsearch-data:
+  elasticsearch-init:
+
+networks:
+  minitwit_network:
+    driver: overlay

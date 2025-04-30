@@ -10,7 +10,7 @@ resource "digitalocean_droplet" "minitwit-swarm-leader" {
   image = "docker-20-04" // ubuntu-22-04-x64
   name = "minitwit-swarm-leader"
   region = var.region
-  size = "s-1vcpu-1gb"
+  size = "s-2vcpu-4gb"
   # add public ssh key so we can access the machine
   ssh_keys = [digitalocean_ssh_key.minitwit.fingerprint]
 
@@ -26,6 +26,11 @@ resource "digitalocean_droplet" "minitwit-swarm-leader" {
   provisioner "file" {
     source = "stack/minitwit_stack.yml"
     destination = "/root/minitwit_stack.yml"
+  }
+
+  provisioner "file" {
+    source = "stack/.env"
+    destination = "/root/.env"
   }
 
   provisioner "remote-exec" {
@@ -47,14 +52,6 @@ resource "digitalocean_droplet" "minitwit-swarm-leader" {
   }
 }
 
-resource "null_resource" "swarm-worker-token" {
-  depends_on = [digitalocean_droplet.minitwit-swarm-leader]
-
-  # save the worker join token
-  provisioner "local-exec" {
-    command = "ssh -o 'ConnectionAttempts 3600' -o 'StrictHostKeyChecking no' root@${digitalocean_droplet.minitwit-swarm-leader.ipv4_address} -i ssh_key/terraform 'docker swarm join-token worker -q' > temp/worker_token"
-  }
-}
 
 resource "null_resource" "swarm-manager-token" {
   depends_on = [digitalocean_droplet.minitwit-swarm-leader]
@@ -77,7 +74,7 @@ resource "digitalocean_droplet" "minitwit-swarm-manager" {
   depends_on = [null_resource.swarm-manager-token]
 
   # number of vms to create
-  count = 2
+  count = 1
 
   image = "docker-20-04"
   name = "minitwit-swarm-manager-${count.index}"
@@ -120,6 +117,15 @@ resource "digitalocean_droplet" "minitwit-swarm-manager" {
 }
 
 
+resource "null_resource" "swarm-worker-token" {
+  depends_on = [digitalocean_droplet.minitwit-swarm-leader, digitalocean_droplet.minitwit-swarm-manager]
+
+  # save the worker join token
+  provisioner "local-exec" {
+    command = "ssh -o 'ConnectionAttempts 3600' -o 'StrictHostKeyChecking no' root@${digitalocean_droplet.minitwit-swarm-leader.ipv4_address} -i ssh_key/terraform 'docker swarm join-token worker -q' > temp/worker_token"
+  }
+}
+
 #                     _
 # __      _____  _ __| | _____ _ __
 # \ \ /\ / / _ \| '__| |/ / _ \ '__|
@@ -132,7 +138,7 @@ resource "digitalocean_droplet" "minitwit-swarm-worker" {
   depends_on = [null_resource.swarm-worker-token]
 
   # number of vms to create
-  count = 3
+  count = 1
 
   image = "docker-20-04"
   name = "minitwit-swarm-worker-${count.index}"
