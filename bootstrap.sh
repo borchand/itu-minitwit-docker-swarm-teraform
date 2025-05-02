@@ -16,6 +16,12 @@ echo -e "\n--> Checking that environment variables are set\n"
 [ -z "$AWS_SECRET_ACCESS_KEY" ] && echo "AWS_SECRET_ACCESS_KEY is not set" && exit
 [ -z "$DIGITAL_OCEAN_KEY" ] && echo "DIGITAL_OCEAN_KEY is not set" && exit
 
+echo -e "\n--> Fetching Environment File from Digital Ocean\n"
+
+aws --endpoint-url https://fra1.digitaloceanspaces.com \
+    s3 cp s3://$SPACE_NAME/minitwit/.env ./stack/.env
+
+
 echo -e "\n--> Initializing terraform\n"
 # initialize terraform
 terraform init \
